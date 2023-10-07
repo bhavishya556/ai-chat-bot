@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f2f2f2;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: black;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+
+
+
+            /* overflow-y: scroll; */
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+
+        }
+
+        *::-webkit-scrollbar {
+            display: none;
+
+        }
+
+        .chat-container {
+            width: 100vw;
+       
+            background-color: #fff;
+         
+    
+            overflow: hidden;
+        }
+
+        .chat-box {
+            height: 92vh;
+            overflow-y: scroll;
+            padding: 10px;
+            background-color: black;
+            /* Change the background color to black */
+            color: white;
+            /* Change the text color to white */
+        }
+
+        .user-message {
+            background-color: #007bff;
+            /* Blue background for user messages */
+            color: white;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 5px;
+            text-align: right;
+        }
+
+        .bot-message {
+            background-color: #333;
+            /* Dark gray background for bot messages */
+            color: white;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 5px;
+            text-align: left;
+        }
+
+        .input-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            border-top: 1px solid #ccc;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            margin-right: 10px;
+        }
+
+        button {
+            margin: 2px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 10px 20px;
+            cursor: pointer;
+        }
+
+        /* Loading indicator style */
+        .loading {
+            text-align: center;
+            padding: 10px;
+            color: #007bff;
+        }
+
+        /* Code block style */
+        .code-block {
+            background-color: #9a8c98;
+            /* Light gray background for code blocks */
+            padding: 10px;
+            margin-bottom: 5px;
+            white-space: pre-wrap;
+            /* Preserve line breaks in code */
+        }
+
+        /* Green microphone button when voice input is activated */
+        #voice-input-button.active {
+            background-color: green;
+        }
+
+        /* Red stop button when reading is active */
+        #stop-button.active {
+            background-color: red;
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css"
+        integrity="sha512-z3gLpd7yknf1YoNbCzqRKc4qyor8gaKU1qmn+CShxbuBusANI9QpRohGBreCFkKxLhei6S9CQXFEbbKuqLg0DA=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
+</head>
+
+<body>
+    <div class="chat-container">
+        <div class="chat-box" id="chat-box"></div>
+        <div class="input-container">
+            <input type="text" id="user-input" placeholder="Type your message...">
+            <button onclick="sendMessage()"><i class="fa fa-paper-plane" aria-hidden="true"></i></button>
+            <button id="voice-input-button" onclick="startVoiceInput()"><i class="fa-solid fa-microphone"></i></button>
+            <button id="stop-button" onclick="toggleReading()"><i class="fa-solid fa-stop"></i></button>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script>
+        const chatBox = document.getElementById("chat-box");
+        const userInput = document.getElementById("user-input");
+        const voiceInputButton = document.getElementById("voice-input-button");
+        const stopButton = document.getElementById("stop-button");
+        let isListening = false;
+        let isReading = true;
+        let speakingQueue = [];
+
+        // Check if the SpeechSynthesis API is available in the browser
+        const synth = window.speechSynthesis;
+
+        // Initialize the SpeechRecognition API for voice input 
+        const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        recognition.lang = "en-US";
+
+        recognition.onresult = function (event) {
+            const transcript = event.results[0][0].transcript.toLowerCase();
+            userInput.value = transcript;
+        };
+
+        recognition.onstart = function () {
+            // Change the button color to green when voice input is activated
+            voiceInputButton.classList.add("active");
+        };
+
+        recognition.onend = function () {
+            // Change the button color back to blue when voice input ends
+            voiceInputButton.classList.remove("active");
+
+            if (isListening) {
+                sendMessage(); // Send the user's message when voice input ends
+                isListening = false;
+            }
+        };
+
+        function startVoiceInput() {
+            recognition.start();
+            isListening = true;
+        }
+
+        function appendMessage(message, sender, messageType) {
+            const messageDiv = document.createElement("div");
+            messageDiv.classList.add(sender);
+
+            if (messageType === "code-message") {
+                const codeBlock = document.createElement("pre");
+                codeBlock.classList.add("code-block");
+                codeBlock.textContent = message;
+                messageDiv.appendChild(codeBlock);
+            } else {
+                messageDiv.textContent = message;
+            }
+
+            chatBox.appendChild(messageDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            // Read the message using text-to-speech if reading is active
+            if (isReading && sender === "bot-message") {
+                speakText(message);
+            }
+        }
+
+        function speakText(text) {
+            console.log("Speaking:", text); // Debugging statement
+            if (synth.speaking) {
+                // If already speaking, add the text to the queue
+                speakingQueue.push(text);
+            } else {
+                const utterance = new SpeechSynthesisUtterance(text);
+                synth.speak(utterance);
+
+                utterance.onend = function () {
+                    // Continue reading from the queue if it's not empty
+                    if (speakingQueue.length > 0) {
+                        speakText(speakingQueue.shift());
+                    }
+                };
+            }
+        }
+
+        function showLoadingIndicator() {
+            const loadingDiv = document.createElement("div");
+            loadingDiv.classList.add("loading");
+            loadingDiv.textContent = "Loading...";
+            chatBox.appendChild(loadingDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function hideLoadingIndicator() {
+            const loadingDiv = chatBox.querySelector(".loading");
+            if (loadingDiv) {
+                chatBox.removeChild(loadingDiv);
+            }
+        }
+
+        function sendMessage() {
+            const userMessage = userInput.value;
+            appendMessage(userMessage, "user", "user-message");
+            userInput.value = "";
+
+            // Show loading indicator while waiting for the response
+            showLoadingIndicator();
+
+            // Send the user's message to the ChatGPT API and handle the response here.
+            // Replace 'YOUR_API_KEY' with your actual API key.
+
+            axios.post("https://api.openai.com/v1/chat/completions", {
+                model: "gpt-3.5-turbo",
+                messages: [{ role: "system", content: "You are a teacher who solves student doubts." }, { role: "user", content: userMessage }]
+            }, {
+                headers: {
+                    "Authorization": "Bearer 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",
+                    "Content-Type": "application/json"
+                }
+            })
+                .then(response => {
+                    const data = response.data;
+                    if (data.choices && data.choices.length > 0) {
+                        const botMessage = data.choices[0].message.content;
+                        const codeBlocks = botMessage.split("```");
+
+                        codeBlocks.forEach((block, index) => {
+                            if (index % 2 === 1) {
+                                // This is a code block
+                                appendMessage(block, "bot-message", "code-message");
+                            } else {
+                                // This is a regular message
+                                appendMessage(block, "bot-message");
+                            }
+                        });
+
+                        // Start reading the response if reading is active
+                        if (isReading) {
+                            speakText(botMessage);
+                        }
+                    } else {
+                        appendMessage("I'm sorry, but I couldn't understand your request.", "bot-message");
+                    }
+                })
+                .catch(error => {
+                    console.error(error);
+                    appendMessage("An error occurred while processing your request.", "bot-message");
+                })
+                .finally(() => {
+                    // Hide the loading indicator when the response is received
+                    hideLoadingIndicator();
+                });
+        }
+
+        function toggleReading() {
+            isReading = !isReading;
+            stopButton.classList.toggle("active");
+            synth.cancel(); // Stop the current speech
+        }
+
+        // Example: Initialize the chat with a greeting message.
+        appendMessage("Hello! How can I assist you today?", "bot-message");
+    </script>
+</body>
+
+</html>
